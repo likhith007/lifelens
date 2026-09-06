@@ -2,7 +2,77 @@
 
 **LifeLens** is a private AI journaling web app built for the Google Cloud Run AI Challenge (APAC). You sign in with Google, talk or type about your day, and optionally save the full conversation to your personal archive.
 
-**Stack:** React frontend · FastAPI backend · Firebase Auth & Firestore · Google ADK multi-agent orchestration · Gemini (chat, speech, calendar parsing)
+**Stack:** React frontend · FastAPI backend · Firebase Auth & Firestore · **Google ADK** multi-agent orchestration · **Gemini models** (chat, speech, calendar parsing)
+
+> **See [Highlights: Google ADK + Gemini](#highlights-google-adk--gemini)** for the full model list and ADK architecture.
+
+---
+
+## Highlights: Google ADK + Gemini
+
+### Google ADK (Agent Development Kit)
+
+LifeLens uses **[Google ADK](https://google.github.io/adk-docs/)** to orchestrate a multi-agent journaling system — not a single monolithic prompt.
+
+| ADK capability | How LifeLens uses it |
+|----------------|----------------------|
+| **Coordinator agent** | `lifelens_coordinator` routes each user turn to the right specialist |
+| **Sub-agents** | 6 specialists: reflection, brainstorm, archive, calendar, summary, datetime |
+| **Function tools** | `get_current_datetime`, `create_calendar_event`, `prepare_journal_archive`, `format_bullet_summary`, `suggest_reflection_prompts` |
+| **Agent transfer** | Coordinator hands off to sub-agents based on journal mode, intent, and user message |
+| **Streaming (SSE)** | ADK events streamed token-by-token to the React UI via `/api/chat/stream` |
+| **Session memory** | In-memory ADK sessions preserve multi-turn context per `session_id` |
+| **Centralized prompts** | All system prompts in `backend/app/agents/prompts/*.txt` |
+| **Model fallback** | ADK runner retries with alternate Gemini models on transient errors |
+
+**Agent architecture:**
+
+```
+lifelens_coordinator
+├── reflection_agent      ← Reflection journal mode (daily check-in)
+├── brainstorm_agent      ← Brainstorm journal mode (gentle ideation)
+├── archive_agent         ← "Save to my journal"
+├── calendar_agent        ← Schedule events on Google Calendar
+├── summary_agent         ← Summarize full session
+└── datetime_agent        ← Resolve "yesterday", "tomorrow", etc.
+```
+
+### Gemini models (full list)
+
+Every AI feature in LifeLens runs on **Gemini** — provisioned via **[Google AI Studio](https://aistudio.google.com/)** and called through the `google-genai` SDK and Google ADK.
+
+| Model | Used for |
+|-------|----------|
+| `gemini-3.6-flash` | Primary chat (ADK agents), STT fallback #1 |
+| `gemini-3.1-flash-lite` | Chat fallback #2, STT fallback #2 |
+| `gemini-flash-latest` | Chat fallback #3, calendar extraction, STT fallback #3 |
+| `gemini-3.7-flash` | Chat fallback #4, STT fallback #4 |
+| `gemini-2.0-flash` | Calendar natural-language date extraction |
+| `gemini-2.0-flash-lite` | Calendar extraction fallback |
+| `gemini-2.5-flash-preview-tts` | Text-to-speech (voice replies) — primary |
+| `gemini-2.5-pro-preview-tts` | Text-to-speech fallback |
+| `gemini-3.1-flash-tts-preview` | Text-to-speech fallback |
+
+**Fallback behaviour:** if a model returns `UNAVAILABLE`, `429`, or similar, the backend automatically tries the next model in the ladder — no user action required.
+
+### Google AI Studio (initial setup)
+
+1. Created a **Gemini API key** in [Google AI Studio](https://aistudio.google.com/) for development.
+2. Prototyped prompts and tested Gemini responses before wiring into ADK agents.
+3. Moved the production key to **Google Cloud Secret Manager** (`GEMINI_API_KEY`) — never in git or the frontend bundle.
+
+### Google Cloud services
+
+| Service | Role in LifeLens |
+|---------|------------------|
+| **[Cloud Run](https://cloud.google.com/run)** | Production hosting (API + SPA). Label: `dev-tutorial=cloud-run-ai-challenge` |
+| **[Cloud Build](https://cloud.google.com/build)** | Docker image builds with Firebase web config |
+| **[Secret Manager](https://cloud.google.com/secret-manager)** | Gemini API key storage |
+| **[Firebase Auth](https://firebase.google.com/products/auth)** | Google Sign-In |
+| **[Cloud Firestore](https://firebase.google.com/products/firestore)** | Journal archives |
+| **[Google Calendar API](https://developers.google.com/calendar)** | Event creation from chat |
+
+**Live URL:** https://lifelens-dsnkuh2cta-as.a.run.app
 
 ---
 
@@ -100,7 +170,11 @@ Each chat request includes the user’s **timezone** and **journal mode**. The b
 
 ### Model fallback
 
-If a Gemini model is unavailable, the backend tries a fallback ladder (`gemini-3.6-flash` → `gemini-3.1-flash-lite` → …) before failing.
+All AI inference runs on **Gemini**. If a model is unavailable, the backend tries the next in the ladder:
+
+- **Chat / ADK agents:** `gemini-3.6-flash` → `gemini-3.1-flash-lite` → `gemini-flash-latest` → `gemini-3.7-flash`
+- **Calendar extraction:** `gemini-2.0-flash` → `gemini-flash-latest` → `gemini-2.0-flash-lite`
+- **STT / TTS:** separate fallback lists in `speech_service.py`
 
 ---
 
@@ -220,7 +294,10 @@ firebase deploy --only firestore:rules
 
 Rules enforce `request.auth.uid == userId` on all user data.
 
-### 3. Gemini API key (Secret Manager)
+### 3. Gemini API key (Google AI Studio → Secret Manager)
+
+1. Open **[Google AI Studio](https://aistudio.google.com/)** → **Get API key** → create a key for your GCP project.
+2. Store it in Secret Manager (never commit the key):
 
 ```bash
 chmod +x scripts/setup-secrets.sh
