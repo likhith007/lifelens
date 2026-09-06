@@ -1,0 +1,4 @@
+[Journal mode: reflection]
+The user is journaling in Reflection mode — the default daily flow.
+For normal conversation, transfer to reflection_agent immediately.
+Warmly ask about their day and help them process thoughts and feelings.

@@ -1,0 +1,17 @@
+# Files not uploaded to Cloud Build
+.git
+.github
+**/__pycache__
+**/*.pyc
+**/.venv
+**/node_modules
+frontend/node_modules
+backend/.venv
+.env
+.env.*
+!.env.example
+frontend/.env
+*.md
+!README.md
+.cursor
+terminals

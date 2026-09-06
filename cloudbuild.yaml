@@ -1,0 +1,34 @@
+# Cloud Build — builds Docker image with Firebase web config baked into the SPA.
+# Substitutions are passed from scripts/deploy-cloud-run.sh (from frontend/.env).
+
+substitutions:
+  _IMAGE: lifelens
+  _VITE_FIREBASE_API_KEY: ""
+  _VITE_FIREBASE_AUTH_DOMAIN: ""
+  _VITE_FIREBASE_PROJECT_ID: ""
+  _VITE_FIREBASE_STORAGE_BUCKET: ""
+  _VITE_FIREBASE_MESSAGING_SENDER_ID: ""
+  _VITE_FIREBASE_APP_ID: ""
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg=VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY}
+      - --build-arg=VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN}
+      - --build-arg=VITE_FIREBASE_PROJECT_ID=${_VITE_FIREBASE_PROJECT_ID}
+      - --build-arg=VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET}
+      - --build-arg=VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID}
+      - --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}
+      - -t
+      - gcr.io/$PROJECT_ID/${_IMAGE}:$COMMIT_SHA
+      - -t
+      - gcr.io/$PROJECT_ID/${_IMAGE}:latest
+      - .
+
+images:
+  - gcr.io/$PROJECT_ID/${_IMAGE}:latest
+  - gcr.io/$PROJECT_ID/${_IMAGE}:$COMMIT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY

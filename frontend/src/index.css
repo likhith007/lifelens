@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-surface font-sans text-ink antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background-color: #e8f0ed;
+    color: #2d4a3e;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-2.5 text-sm font-medium text-white transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .btn-primary:hover {
+    background-color: #243d33;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200;
+    color: #5c5c5c;
+  }
+
+  .btn-ghost:hover {
+    @apply bg-surface-muted;
+    color: #1c1c1c;
+  }
+
+  .input-field {
+    @apply w-full resize-none rounded-2xl border border-line bg-surface-elevated px-5 py-4 text-[15px] leading-relaxed text-ink transition-all duration-200 focus:outline-none disabled:opacity-50;
+  }
+
+  .input-field::placeholder {
+    color: #b5b5b5;
+  }
+
+  .input-field:focus {
+    border-color: #c5d9d0;
+    box-shadow: 0 0 0 2px #e8f0ed;
+  }
+}

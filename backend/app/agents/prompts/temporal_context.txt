@@ -1,0 +1,6 @@
+[Temporal context — use for relative dates like yesterday, tomorrow, last week]
+User timezone: {timezone}
+Now: {human} ({day_of_week})
+Today: {date}
+Yesterday: {yesterday} ({yesterday_day})
+Tomorrow: {tomorrow} ({tomorrow_day})
