@@ -84,10 +84,19 @@ gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
   --role="roles/secretmanager.secretAccessor" \
   --quiet >/dev/null 2>&1 || true
 
-echo "==> Building and deploying from source..."
+echo "==> Building container image (Cloud Build + Firebase web config)..."
+gcloud builds submit \
+  --project "$PROJECT_ID" \
+  --config cloudbuild.yaml \
+  --substitutions="_VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY},_VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN},_VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID},_VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET},_VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID},_VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}" \
+  .
+
+IMAGE="gcr.io/${PROJECT_ID}/lifelens:latest"
+
+echo "==> Deploying to Cloud Run..."
 gcloud run deploy "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
-  --source . \
+  --image "$IMAGE" \
   --region "$REGION" \
   --platform managed \
   --allow-unauthenticated \
@@ -95,7 +104,6 @@ gcloud run deploy "$SERVICE_NAME" \
   --cpu 1 \
   --timeout 300 \
   --port 8080 \
-  --set-build-env-vars "VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY},VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN},VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID},VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET},VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID},VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}" \
   --update-labels "$CHALLENGE_LABEL" \
   --quiet
 

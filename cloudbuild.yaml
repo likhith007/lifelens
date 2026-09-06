@@ -21,14 +21,11 @@ steps:
       - --build-arg=VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID}
       - --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}
       - -t
-      - gcr.io/$PROJECT_ID/${_IMAGE}:$COMMIT_SHA
-      - -t
       - gcr.io/$PROJECT_ID/${_IMAGE}:latest
       - .
 
 images:
   - gcr.io/$PROJECT_ID/${_IMAGE}:latest
-  - gcr.io/$PROJECT_ID/${_IMAGE}:$COMMIT_SHA
 
 options:
   logging: CLOUD_LOGGING_ONLY
