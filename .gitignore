@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# LifeLens project-specific
+node_modules/
+frontend/node_modules/
+backend/.venv/
+backend/static/*
+!backend/static/.gitkeep
+.env
+.env.local
+frontend/.env
+# frontend/src/lib is app code (not Python lib/)
+!frontend/src/lib/

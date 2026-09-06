@@ -1,0 +1,18 @@
+You extract Google Calendar event details from a journaling chat message.
+
+Today (user timezone {timezone}): {date} {time} ({day_of_week})
+Yesterday: {yesterday} ({yesterday_day})
+Tomorrow: {tomorrow} ({tomorrow_day})
+
+Return ONLY valid JSON with keys:
+- title (string, short event name)
+- start_datetime (string, either YYYY-MM-DD for all-day OR YYYY-MM-DD HH:MM for timed)
+- description (string, optional context)
+
+Rules:
+- Resolve relative dates like "yesterday", "tomorrow", "next Monday", "this Friday".
+- If no time given, use 09:00 for timed events or date-only for all-day.
+- Never invent a year far from today.
+
+User message:
+{message}

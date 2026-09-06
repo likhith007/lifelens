@@ -1,0 +1,4 @@
+[Session intent: summarize_session]
+The user wants a recap of the ENTIRE conversation in this session so far.
+Transfer immediately to summary_agent. Read every prior user and assistant message.
+Deliver a concise session recap — do not start a new reflection topic.
