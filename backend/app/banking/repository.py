@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from copy import deepcopy
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
+from app.banking.mappers import account_from_row, customer_from_row, issue_from_row
 from app.banking.models import (
     AccountDetail,
     AccountStatus,
@@ -12,9 +15,11 @@ from app.banking.models import (
     CardStatus,
     Customer,
     CustomerSummary,
+    IssueCategory,
+    IssueSeverity,
     IssueStatus,
 )
-from app.banking.seed_data import ACCOUNTS, CUSTOMERS
+from app.banking.orm import AccountRow, CardRow, CustomerRow, IssueRow
 
 
 def mask_account_number(account_number: str) -> str:
@@ -24,90 +29,110 @@ def mask_account_number(account_number: str) -> str:
 
 
 class BankingRepository:
-    """In-memory banking store seeded with demo accounts and known issues."""
+    def __init__(self, session: Session) -> None:
+        self._session = session
 
-    def __init__(self) -> None:
-        self._customers: dict[str, Customer] = {c.id: deepcopy(c) for c in CUSTOMERS}
-        self._accounts: dict[str, BankAccount] = {a.id: deepcopy(a) for a in ACCOUNTS}
-
-    def reset(self) -> None:
-        self.__init__()
+    def _account_query(self):
+        return select(AccountRow).options(
+            selectinload(AccountRow.cards),
+            selectinload(AccountRow.issues),
+        )
 
     def list_customers(self) -> list[CustomerSummary]:
+        customers = self._session.scalars(
+            select(CustomerRow).order_by(CustomerRow.preferred_name)
+        ).all()
         summaries: list[CustomerSummary] = []
-        for customer in self._customers.values():
-            account_ids = [
-                a.id for a in self._accounts.values() if a.customer_id == customer.id
-            ]
-            open_issues = sum(
-                1
-                for aid in account_ids
-                for issue in self._accounts[aid].issues
-                if issue.status != IssueStatus.RESOLVED
-            )
+        for customer in customers:
+            accounts = self._session.scalars(
+                select(AccountRow).where(AccountRow.customer_id == customer.id)
+            ).all()
+            account_ids = [a.id for a in accounts]
+            open_issues = 0
+            if account_ids:
+                open_issues = (
+                    self._session.scalar(
+                        select(func.count())
+                        .select_from(IssueRow)
+                        .where(
+                            IssueRow.account_id.in_(account_ids),
+                            IssueRow.status != IssueStatus.RESOLVED.value,
+                        )
+                    )
+                    or 0
+                )
             summaries.append(
                 CustomerSummary(
-                    customer=customer,
+                    customer=customer_from_row(customer),
                     account_ids=account_ids,
                     open_issue_count=open_issues,
                 )
             )
-        return sorted(summaries, key=lambda s: s.customer.preferred_name)
+        return summaries
 
     def get_customer(self, customer_id: str) -> Customer:
-        customer = self._customers.get(customer_id)
-        if not customer:
+        row = self._session.get(CustomerRow, customer_id)
+        if not row:
             raise HTTPException(status_code=404, detail="Customer not found")
-        return customer
+        return customer_from_row(row)
 
     def list_accounts(self, customer_id: str | None = None) -> list[BankAccount]:
-        accounts = list(self._accounts.values())
+        stmt = self._account_query().order_by(AccountRow.account_number)
         if customer_id:
-            accounts = [a for a in accounts if a.customer_id == customer_id]
-        return sorted(accounts, key=lambda a: a.account_number)
+            stmt = stmt.where(AccountRow.customer_id == customer_id)
+        rows = self._session.scalars(stmt).all()
+        return [account_from_row(r) for r in rows]
 
     def get_account(self, account_id: str) -> AccountDetail:
-        account = self._accounts.get(account_id)
-        if not account:
+        row = self._session.scalar(
+            self._account_query().where(AccountRow.id == account_id)
+        )
+        if not row:
             raise HTTPException(status_code=404, detail="Account not found")
-        customer = self.get_customer(account.customer_id)
-        return AccountDetail(account=account, customer=customer)
+        customer = self.get_customer(row.customer_id)
+        return AccountDetail(account=account_from_row(row), customer=customer)
 
     def get_account_by_number(self, account_number: str) -> AccountDetail:
-        for account in self._accounts.values():
-            if account.account_number == account_number:
-                return self.get_account(account.id)
-        raise HTTPException(status_code=404, detail="Account not found")
+        row = self._session.scalar(
+            self._account_query().where(AccountRow.account_number == account_number)
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Account not found")
+        return self.get_account(row.id)
 
     def list_open_issues(self, account_id: str | None = None) -> list[tuple[str, BankingIssue]]:
-        rows: list[tuple[str, BankingIssue]] = []
-        for account in self._accounts.values():
-            if account_id and account.id != account_id:
-                continue
-            for issue in account.issues:
-                if issue.status != IssueStatus.RESOLVED:
-                    rows.append((account.id, issue))
-        return rows
+        stmt = select(IssueRow).where(IssueRow.status != IssueStatus.RESOLVED.value)
+        if account_id:
+            stmt = stmt.where(IssueRow.account_id == account_id)
+        rows = self._session.scalars(stmt.order_by(IssueRow.opened_at)).all()
+        return [(row.account_id, issue_from_row(row)) for row in rows]
 
-    def get_issue(self, account_id: str, issue_id: str) -> BankingIssue:
-        account = self._accounts.get(account_id)
-        if not account:
-            raise HTTPException(status_code=404, detail="Account not found")
-        for issue in account.issues:
-            if issue.id == issue_id:
-                return issue
-        raise HTTPException(status_code=404, detail="Issue not found")
+    def get_issue(self, account_id: str, issue_id: str) -> IssueRow:
+        row = self._session.scalar(
+            select(IssueRow).where(
+                IssueRow.account_id == account_id,
+                IssueRow.id == issue_id,
+            )
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Issue not found")
+        return row
 
     def resolve_issue(
         self, account_id: str, issue_id: str, resolution_note: str, mark_resolved: bool
     ) -> BankingIssue:
-        issue = self.get_issue(account_id, issue_id)
-        issue.metadata["resolution_note"] = resolution_note
-        if mark_resolved:
-            issue.status = IssueStatus.RESOLVED
-        else:
-            issue.status = IssueStatus.IN_PROGRESS
-        return issue
+        row = self.get_issue(account_id, issue_id)
+        meta = dict(row.metadata_json or {})
+        meta["resolution_note"] = resolution_note
+        row.metadata_json = meta
+        row.status = (
+            IssueStatus.RESOLVED.value
+            if mark_resolved
+            else IssueStatus.IN_PROGRESS.value
+        )
+        self._session.commit()
+        self._session.refresh(row)
+        return issue_from_row(row)
 
     def block_card(
         self,
@@ -116,10 +141,12 @@ class BankingRepository:
         confirm_last_four: str,
         reason: str,
     ) -> BankAccount:
-        account = self._accounts.get(account_id)
+        account = self._session.scalar(
+            self._account_query().where(AccountRow.id == account_id)
+        )
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
-        if account.status == AccountStatus.FROZEN:
+        if account.status == AccountStatus.FROZEN.value:
             raise HTTPException(
                 status_code=409,
                 detail="Account is frozen; card block may require agent review",
@@ -129,29 +156,28 @@ class BankingRepository:
             raise HTTPException(status_code=404, detail="Card not found")
         if card.last_four != confirm_last_four:
             raise HTTPException(status_code=400, detail="Last four digits do not match")
-        if card.status == CardStatus.BLOCKED:
+        if card.status == CardStatus.BLOCKED.value:
             raise HTTPException(status_code=409, detail="Card is already blocked")
-        card.status = CardStatus.BLOCKED
-        from datetime import datetime, timezone
-
-        from app.banking.models import IssueCategory, IssueSeverity
-
-        account.issues.append(
-            BankingIssue(
+        card.status = CardStatus.BLOCKED.value
+        self._session.add(
+            IssueRow(
                 id=f"iss_block_{card_id}",
-                category=IssueCategory.CARD,
-                severity=IssueSeverity.LOW,
-                status=IssueStatus.RESOLVED,
+                account_id=account_id,
+                category=IssueCategory.CARD.value,
+                severity=IssueSeverity.LOW.value,
+                status=IssueStatus.RESOLVED.value,
                 title="Card blocked per customer request",
                 description=f"Card ending {card.last_four} blocked. Reason: {reason}.",
                 customer_visible_hint="",
                 suggested_intents=[],
                 opened_at=datetime.now(timezone.utc),
-                metadata={"reason": reason, "card_id": card_id},
+                metadata_json={"reason": reason, "card_id": card_id},
             )
         )
-        return account
-
-
-# Singleton for local dev (agents will mutate state during demos)
-banking_repo = BankingRepository()
+        self._session.commit()
+        self._session.refresh(account)
+        refreshed = self._session.scalar(
+            self._account_query().where(AccountRow.id == account_id)
+        )
+        assert refreshed is not None
+        return account_from_row(refreshed)
