@@ -22,10 +22,12 @@ from app.schemas import (
 from app.calendar_extract import extract_calendar_event
 from app.calendar_service import create_calendar_event
 from app.speech_service import synthesize_speech_wav, transcribe_audio
+from app.banking.router import router as banking_router
 
 load_dotenv()
 
 app = FastAPI(title="LifeLens API", version="1.0.0")
+app.include_router(banking_router)
 
 allowed_origins = os.getenv(
     "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
