@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -22,10 +23,21 @@ from app.schemas import (
 from app.calendar_extract import extract_calendar_event
 from app.calendar_service import create_calendar_event
 from app.speech_service import synthesize_speech_wav, transcribe_audio
+from app.banking.database import init_database
+from app.banking.router import router as banking_router
 
 load_dotenv()
 
-app = FastAPI(title="LifeLens API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if os.getenv("SKIP_DB_INIT", "").lower() not in ("1", "true", "yes"):
+        init_database()
+    yield
+
+
+app = FastAPI(title="LifeLens API", version="1.0.0", lifespan=lifespan)
+app.include_router(banking_router)
 
 allowed_origins = os.getenv(
     "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
